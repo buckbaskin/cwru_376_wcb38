@@ -37,22 +37,60 @@ int main(int argc, char **argv)
 		velcmd_pub.publish(twist_cmd); //.222|0
 		sleep_timer.sleep();
 	}
+	twist_cmd.linear.x = 0.0;
+	twist_cmd.angular.z = 0.0;
+	velcmd_pub.publish(twist_cmd); //0|0
 	ROS_INFO(" --> End March");
-	twist_cmd.linear.x = 0.0;
-	velcmd_pub.publish(twist_cmd); //0|0
 
-	niters=500; // 4.5045 sec
 	ROS_INFO("Turn to April --> ");
+	niters=500; // 4.5045 sec, 90deg
 	for (int i=0;i<niters;i++) {
-		twist_cmd.angular.z = -0.3487;
-		velcmd_pub.publish(twist_cmd); // really, should only need to publish this once, but no hard done
-		sleep_timer.sleep(); // sleep for (remainder of) 10m
+		twist_cmd.angular.z = -0.3487; //0|-.3487
+		velcmd_pub.publish(twist_cmd);
+		sleep_timer.sleep();
 	}
-	ROS_INFO(" --> End April");\
 	twist_cmd.linear.x = 0.0;
+	twist_cmd.angular.z = 0.0;
 	velcmd_pub.publish(twist_cmd); //0|0
+	ROS_INFO(" --> End April");
 	
-	ROS_INFO("End of the year.")
+	ROS_INFO("Onward May -->");
+	niters = 1000; //9.009sec, 2 m
+	for (int i=0;i<niters;i++) {
+		twist_cmd.linear.x = 0.222;
+		velcmd_pub.publish(twist_cmd); //.222|0
+		sleep_timer.sleep();
+	}
+	twist_cmd.linear.x = 0.0;
+	twist_cmd.angular.z = 0.0;
+	velcmd_pub.publish(twist_cmd); //0|0
+	ROS_INFO(" --> End May");
+
+	ROS_INFO("Turn to June --> ");
+	niters=500; // 4.5045 sec, 90deg
+	for (int i=0;i<niters;i++) {
+		twist_cmd.angular.z = -0.3487; //0|-.3487
+		velcmd_pub.publish(twist_cmd);
+		sleep_timer.sleep();
+	}
+	twist_cmd.linear.x = 0.0;
+	twist_cmd.angular.z = 0.0;
+	velcmd_pub.publish(twist_cmd); //0|0
+	ROS_INFO(" --> End June");
+
+	ROS_INFO("Onward July -->");
+	niters = 1000; //9.009sec, 2 m
+	for (int i=0;i<niters;i++) {
+		twist_cmd.linear.x = 0.222;
+		velcmd_pub.publish(twist_cmd); //.222|0
+		sleep_timer.sleep();
+	}
+	twist_cmd.linear.x = 0.0;
+	twist_cmd.angular.z = 0.0;
+	velcmd_pub.publish(twist_cmd); //0|0
+	ROS_INFO(" --> End July");
+
+	ROS_INFO("Tired August.")
 	twist_cmd.linear.x = 0.0;
 	twist_cmd.angular.z = 0;
 	velcmd_pub.publish(twist_cmd); //0|0 and halt
