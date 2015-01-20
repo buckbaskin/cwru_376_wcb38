@@ -4,15 +4,11 @@ int main(int argc, char **argv)
 {
 	ros::init(argc,argv,"robot0_commander_wcb38");
 	ros::NodeHandle nh;
-	ros::Publisher cmd_publisher = nh.advertise<geometry_msgs::Twist>("/robot0/cmd_vel",1);
+	ros::Publisher velcmd_pub = nh.advertise<geometry_msgs::Twist>("/robot0/cmd_vel",1);
 	// change topic to command abby...
-	//ros::Publisher cmd_publisher = nh.advertise<geometry_msgs::Twist>("abby/cmd_vel",1);
-	ros::Rate sleep_timer(100); //let's make a 100Hz timer
+	//ros::Publisher velcmd_pub = nh.advertise<geometry_msgs::Twist>("abby/cmd_vel",1);
+	ros::Rate sleep_timer(111); //111Hz timer
 
-	//create a variable of type "Twist", as defined in: /opt/ros/hydro/share/geometry_msgs
-	// look at the components of a message of type geometry_msgs::Twist by typing:
-	// rosmsg show geometry_msgs/Twist/
-	// It has 6 fields.  Let's fill them all in with some data:
 	geometry_msgs::Twist twist_cmd;
 	twist_cmd.linear.x = 0.0;
 	twist_cmd.linear.y = 0.0;
@@ -21,36 +17,44 @@ int main(int argc, char **argv)
 	twist_cmd.angular.y = 0.0;
 	twist_cmd.angular.z = 0.0;
 
-	ROS_INFO("count-down");
+	ROS_INFO("count-down 3 seconds");
 	for (int j=3;j>0;j--) {
-		ROS_INFO("j start sleep --> %d",j);
-		for (int i = 0; i<100;i++)
+		ROS_INFO("%d!",j);
+		for (int i = 0; i<111;i++)
 		    sleep_timer.sleep();
 	}
-
-	int niters = 1200; //1000 iters at 100Hz is 10 seconds;
-		//iteration counter; at 10ms/iteration, and 0.2m/sec, expect 2mm/iter
-		// should move by 2m over 10 sec
+	ROS_INFO("0!");
+`	ROS_INFO("Onward March -->");
+	int niters = 1000; 
+/*
+	1000 iters at 111Hz is 9.009 seconds; 
+	at 9.009ms/iteration, and 0.222m/sec, expect 2.0mm/iter ; 
+	should move by 2m over 9.009 sec 
+*/
+	velcmd_pub.publish(twist_cmd); //0|0
 	for (int i=0;i<niters;i++) {
-		cmd_publisher.publish(twist_cmd); // really, should only need to publish this once, but no hard done
-		sleep_timer.sleep(); // sleep for (remainder of) 10m
+		twist_cmd.linear.x = 0.222;
+		velcmd_pub.publish(twist_cmd); //.222|0
+		sleep_timer.sleep();
 	}
+	ROS_INFO(" --> End March");
 	twist_cmd.linear.x = 0.0;
-	twist_cmd.angular.z = -0.314;
-	niters=500; // 5 sec
-	ROS_INFO("Time to rotate negative");
+	velcmd_pub.publish(twist_cmd); //0|0
+
+	niters=500; // 4.5045 sec
+	ROS_INFO("Turn to April --> ");
 	for (int i=0;i<niters;i++) {
-		cmd_publisher.publish(twist_cmd); // really, should only need to publish this once, but no hard done
+		twist_cmd.angular.z = -0.3487;
+		velcmd_pub.publish(twist_cmd); // really, should only need to publish this once, but no hard done
 		sleep_timer.sleep(); // sleep for (remainder of) 10m
 	}
-	ROS_INFO("my work here is done");
-	//while (ros::ok()) 
-	{
-		twist_cmd.linear.x = 0.0;
-		twist_cmd.angular.z = 0;
-		cmd_publisher.publish(twist_cmd); // and halt
-	}
-
-
+	ROS_INFO(" --> End April");\
+	twist_cmd.linear.x = 0.0;
+	velcmd_pub.publish(twist_cmd); //0|0
+	
+	ROS_INFO("End of the year.")
+	twist_cmd.linear.x = 0.0;
+	twist_cmd.angular.z = 0;
+	velcmd_pub.publish(twist_cmd); //0|0 and halt
 	return 0;
 } 
