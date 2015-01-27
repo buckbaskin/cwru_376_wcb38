@@ -92,11 +92,15 @@ int main(int argc, char **argv) {
     ros::NodeHandle nh;
     ros::Publisher vel_cmd_pub = nh.advertise<geometry_msgs::Twist>("robot0/cmd_vel", 1);
     ros::Subscriber odom_sub = nh.subscribe("/robot0/odom", 1, odomCallback);
-    ros::Rate rtimer(1 / DT); // frequency corresponding to chosen sample period DT; the main loop will run this fast
+    ros::Rate rtimer(1 / DT);
 
-	path.resize(2,0.0); // index%2 == 0 --> straight_dist in meters. index%2 == 1 --> turn_angle in radians.
+	path.resize(6,0.0); // index % 2 == 0 --> straight_dist in meters. index%2 == 1 --> turn_angle in radians.
 	path[0] = 2.5;
-	path[1] = 0.0;
+	path[1] = 1.58;
+	path[2] = 2.5;
+	path[3] = 1.58;
+	path[4] = 2.5;
+	path[5] = 0.0; //done
 	
 	
 	double segment_length = 0.0;
@@ -106,6 +110,11 @@ int main(int argc, char **argv) {
 	double start_phi = 0.0;
 
 	double scheduled_vel = 0.0; //desired vel, assuming all is per plan
+	double scheduled_w = 0.0;
+	
+	double linear_gain = 1.0;
+	double angular_gain = 0.5;
+	
 	double new_cmd_vel = 0.1; // value of speed to be commanded; update each iteration
 	double new_cmd_omega = 0.0; // update spin rate command as well
 
@@ -140,76 +149,142 @@ int main(int argc, char **argv) {
 		start_y = odom_y_;
 		start_phi = odom_phi_;
 		ROS_INFO("start pose: x %f, y= %f, phi = %f", start_x, start_y, start_phi);
+		
+		/*
+			START CONTROL LOGIC
+		*/
+		
+		
+		if (segment_index % 2 == 0) { //linear drive forward (USES NEWMAN CODE)
+			// compute some properties of trapezoidal velocity profile plan:
+			double T_accel = v_max / a_max; //...assumes start from rest
+			double T_decel = v_max / a_max; //(for same decel as accel); assumes brake to full halt
+			double dist_accel = 0.5 * a_max * (T_accel * T_accel); //distance rqd to ramp up to full speed
+			double dist_decel = 0.5 * a_max * (T_decel * T_decel);; //same as ramp-up distance
+			double dist_const_v = segment_length - dist_accel - dist_decel; //if this is <0, never get to full spd
+			double T_const_v = dist_const_v / v_max; //will be <0 if don't get to full speed
+			double T_segment_tot = T_accel + T_decel + T_const_v; // expected duration of this move
 
-		// compute some properties of trapezoidal velocity profile plan:
-		double T_accel = v_max / a_max; //...assumes start from rest
-		double T_decel = v_max / a_max; //(for same decel as accel); assumes brake to full halt
-		double dist_accel = 0.5 * a_max * (T_accel * T_accel); //distance rqd to ramp up to full speed
-		double dist_decel = 0.5 * a_max * (T_decel * T_decel);; //same as ramp-up distance
-		double dist_const_v = segment_length - dist_accel - dist_decel; //if this is <0, never get to full spd
-		double T_const_v = dist_const_v / v_max; //will be <0 if don't get to full speed
-		double T_segment_tot = T_accel + T_decel + T_const_v; // expected duration of this move
+			//dist_decel*= 2.0; // TEST TEST TEST
+			ROS_INFO("forward segment #%d", (segment_index+1))    
+			while (ros::ok()) // do work here in infinite loop (desired for this example), but terminate if detect ROS has faulted (or ctl-C)
+			{
+				ros::spinOnce(); // allow callbacks to populate fresh data
+				// compute distance travelled so far:
+				double delta_x = odom_x_ - start_x;
+				double delta_y = odom_y_ - start_y;
+				segment_length_done = sqrt(delta_x * delta_x + delta_y * delta_y);
+				ROS_INFO("dist travelled: %f", segment_length_done);
+				double dist_to_go = segment_length - segment_length_done;
 
-		//dist_decel*= 2.0; // TEST TEST TEST
-		ROS_INFO("segment #%d", (segment_index+1))    
-		while (ros::ok()) // do work here in infinite loop (desired for this example), but terminate if detect ROS has faulted (or ctl-C)
-		{
-		    ros::spinOnce(); // allow callbacks to populate fresh data
-		    // compute distance travelled so far:
-		    double delta_x = odom_x_ - start_x;
-		    double delta_y = odom_y_ - start_y;
-		    segment_length_done = sqrt(delta_x * delta_x + delta_y * delta_y);
-			ROS_INFO("dist travelled: %f", segment_length_done);
-		    double dist_to_go = segment_length - segment_length_done;
+				//use segment_length_done to decide what vel should be, as per plan
+				if (dist_to_go<= 0.0) { // at goal, or overshot; stop!
+				    scheduled_vel=0.0;
+				}
+				else if (dist_to_go <= dist_decel) { //possibly should be braking to a halt
+				    // dist = 0.5*a*t_halt^2; so t_halt = sqrt(2*dist/a);   v = a*t_halt
+				    // so v = a*sqrt(2*dist/a) = sqrt(2*dist*a)
+				    scheduled_vel = sqrt(2 * dist_to_go * a_max);
+				    ROS_INFO("braking zone: v_sched = %f",scheduled_vel);
+				}
+				else { // not ready to decel, so target vel is v_max, either accel to it or hold it
+				    scheduled_vel = v_max;
+				}
+				
+		  
 
-		    //use segment_length_done to decide what vel should be, as per plan
-		    if (dist_to_go<= 0.0) { // at goal, or overshot; stop!
-		        scheduled_vel=0.0;
-		    }
-		    else if (dist_to_go <= dist_decel) { //possibly should be braking to a halt
-		        // dist = 0.5*a*t_halt^2; so t_halt = sqrt(2*dist/a);   v = a*t_halt
-		        // so v = a*sqrt(2*dist/a) = sqrt(2*dist*a)
-		        scheduled_vel = sqrt(2 * dist_to_go * a_max);
-		        ROS_INFO("braking zone: v_sched = %f",scheduled_vel);
-		    }
-		    else { // not ready to decel, so target vel is v_max, either accel to it or hold it
-		        scheduled_vel = v_max;
-		    }
-		    
-	  
+				//how does the current velocity compare to the scheduled vel?
+				if (odom_vel_ < scheduled_vel) {  // maybe we halted, e.g. due to estop or obstacle;
+				    // may need to ramp up to v_max; do so within accel limits
+				    double v_test = odom_vel_ + a_max*dt_callback_; // if callbacks are slow, this could be abrupt
+				    // operator:  c = (a>b) ? a : b;
+				    new_cmd_vel = (v_test < scheduled_vel) ? v_test : scheduled_vel; //choose lesser of two options
+				    // this prevents overshooting scheduled_vel
+				} 
+				else if (odom_vel_ > scheduled_vel) { //travelling too fast--this could be trouble
+				    // ramp down to the scheduled velocity.  However, scheduled velocity might already be ramping down at a_max.
+				    // need to catch up, so ramp down even faster than a_max.  Try 1.2*a_max.
+				    ROS_INFO("odom vel: %f; sched vel: %f",odom_vel_,scheduled_vel); //debug/analysis output; can comment this out
+				    
+				    double v_test = odom_vel_ - 1.2 * a_max*dt_callback_; //moving too fast--try decelerating faster than nominal a_max
 
-		    //how does the current velocity compare to the scheduled vel?
-		    if (odom_vel_ < scheduled_vel) {  // maybe we halted, e.g. due to estop or obstacle;
-		        // may need to ramp up to v_max; do so within accel limits
-		        double v_test = odom_vel_ + a_max*dt_callback_; // if callbacks are slow, this could be abrupt
-		        // operator:  c = (a>b) ? a : b;
-		        new_cmd_vel = (v_test < scheduled_vel) ? v_test : scheduled_vel; //choose lesser of two options
-		        // this prevents overshooting scheduled_vel
-		    } else if (odom_vel_ > scheduled_vel) { //travelling too fast--this could be trouble
-		        // ramp down to the scheduled velocity.  However, scheduled velocity might already be ramping down at a_max.
-		        // need to catch up, so ramp down even faster than a_max.  Try 1.2*a_max.
-		        ROS_INFO("odom vel: %f; sched vel: %f",odom_vel_,scheduled_vel); //debug/analysis output; can comment this out
-		        
-		        double v_test = odom_vel_ - 1.2 * a_max*dt_callback_; //moving too fast--try decelerating faster than nominal a_max
+				    new_cmd_vel = (v_test > scheduled_vel) ? v_test : scheduled_vel; // choose larger of two options...don't overshoot scheduled_vel
+				} 
+				else {
+				    new_cmd_vel = scheduled_vel; //silly third case: this is already true, if here.  Issue the scheduled velocity
+				}
+				ROS_INFO("cmd vel: %f",new_cmd_vel); // debug output
 
-		        new_cmd_vel = (v_test > scheduled_vel) ? v_test : scheduled_vel; // choose larger of two options...don't overshoot scheduled_vel
-		    } else {
-		        new_cmd_vel = scheduled_vel; //silly third case: this is already true, if here.  Issue the scheduled velocity
-		    }
-		    ROS_INFO("cmd vel: %f",new_cmd_vel); // debug output
-
-		    cmd_vel.linear.x = new_cmd_vel;
-		    cmd_vel.angular.z = new_cmd_omega; // spin command; always zero, in this example
-		    if (dist_to_go <= 0.0) { //uh-oh...went too far already!
-		        cmd_vel.linear.x = 0.0;  //command vel=0
-		    }
-		    vel_cmd_pub.publish(cmd_vel); // publish the command to robot0/cmd_vel
-		    rtimer.sleep(); // sleep for remainder of timed iteration
-		    if (dist_to_go <= 0.0) break; // end loop for this segment
+				cmd_vel.linear.x = new_cmd_vel;
+				cmd_vel.angular.z = 0.0; // spin command; always zero, in this example
+				if (dist_to_go <= 0.0) { //uh-oh...went too far already!
+				    cmd_vel.linear.x = 0.0;
+				    cmd_vel.angular.w = 0.0;
+				}
+				vel_cmd_pub.publish(cmd_vel); // publish the command to robot0/cmd_vel
+				rtimer.sleep(); // sleep for remainder of timed iteration
+				if (dist_to_go <= 0.0) break; // end loop for this segment
+			}
+			ROS_INFO("completed move distance for segment %d", (segment_index+1));
+			segment_index = segment_index+1;
 		}
-		ROS_INFO("completed move distance for segment %d", (segment_index+1));
-		segment_index = segment_index+1;
-	}
+		else { //turning to heading
+			double max_alpha = 0.25;
+			double max_w = 0.5;
+			
+			ROS_INFO("turn segment #%d", (segment_index+1))    
+			while (ros::ok())
+			{
+				ros::spinOnce();
+				segment_length_done = odom_phi - start_phi;
+				ROS_INFO("dist twisted: %f", segment_length_done);
+				double dist_to_go = segment_length - segment_length_done;
+	
+				//planning speed to go
+				if (dist_to_go<= 0.0) {
+				    scheduled_w=0.0;
+				}
+				else {
+				    schedule_w = std::max(-1.0*max_w , std::min(max_w, dist_to_go*angular_gain));
+				    if ( std::abs(schedule_w) < .05) {
+				    	if (schedule_w > 0.0) { schedule_w = 0.05 ; }
+				    	else { schedule_w = -0.05 ; }
+				    }
+				}
+				
+				//check against accel limits
+				if (odom_omega_ < schedule_w - max_alpha*dt_callback_) {
+				    double w_test = odom_omega_ + max_alpha*dt_callback_;
+				    new_cmd_omega = w_test;
+				} 
+				else if (odom_vel_ > schedule_w + max_alpha*dt_callback_) {
+				    double w_test = odom_omega_ + max_alpha*dt_callback_;
+
+				    new_cmd_omega = w_test;
+				} 
+				else {
+				    new_cmd_omega = schedule_w;
+				}
+				ROS_INFO("cmd vel: %f",new_cmd_omega);
+
+				//publish message
+				cmd_vel.linear.x = 0.0;
+				cmd_vel.angular.z = new_cmd_omega;
+				if (dist_to_go <= 0.0) {
+				    cmd_vel.linear.x = 0.0;
+				    cmd_vel.angular.w = 0.0;
+				}
+				vel_cmd_pub.publish(cmd_vel);
+				
+				//leave if done
+				if (dist_to_go <= 0.0) break;
+				rtimer.sleep();
+			}
+			ROS_INFO("completed turn distance for segment %d", (segment_index+1));
+			segment_index = segment_index+1;
+		} //end if statement for chosing turn or forward
+	} //end while loop to run through segments
 	return 0;
+	// end node
 }
 
